@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 )
@@ -17,8 +16,6 @@ func DateFromUrl(urlAdd string) (string, error) {
 
 	// split the path
 	pathParts := strings.Split(parts.Path, "/")
-
-	fmt.Println(pathParts)
 
 	// convert month to name
 	switch pathParts[2] {

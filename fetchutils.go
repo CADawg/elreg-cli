@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,18 +33,6 @@ func GetWithoutBotDetection(bUrl string, urlPath string) (*http.Response, error)
 	return res, err
 }
 
-type Article struct {
-	Title       string
-	Subtitle    string
-	Author      string
-	AuthorUrl   string
-	Date        string
-	Url         string
-	ContentText string
-	HasComments bool
-	CommentsUrl string
-}
-
 func ParseArticle(articleUrl string) (*Article, error) {
 	resp, err := GetWithoutBotDetection(baseUrl, articleUrl)
 
@@ -51,7 +40,9 @@ func ParseArticle(articleUrl string) (*Article, error) {
 		return nil, err
 	}
 
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 
@@ -100,4 +91,80 @@ func TrimSpaceExtra(untidyString string) string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+func FetchTheRegisterHomepageArticleLinks() ([]ArticleLink, error) {
+	// fetch the register homepage
+	resp, err := GetWithoutBotDetection(baseUrl, "")
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	// parse the HTML to find the article links
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// find the article links
+	var articleLinks []ArticleLink
+
+	doc.Find("a.story_link").Each(func(i int, s *goquery.Selection) {
+		// For each item found, get the title, subtitle, timestamp and URL
+		title := s.Find("h4").Text()
+		subtitle := RemoveAllNewlines(s.Find("div.standfirst").Text())
+		urlLink, _ := s.Attr("href")
+
+		// get 2 parents above to check it's not sponsored
+		parent := s.ParentsFiltered("article").ParentsFiltered("div")
+
+		// it's sponsored, skip
+		if parent.HasClass("other_stories") {
+			return
+		}
+
+		// also check the .section_name's text isn't "Webinar" as that's sponsored too
+		sectionName := s.ParentsFiltered("article").Find(".section_name").Text()
+
+		// it's sponsored, skip
+		if sectionName == "Webinar" {
+			return
+		}
+
+		date := s.Find(".time_stamp").Text()
+
+		if len(date) == 0 {
+			// fetch from url
+			date, _ = DateFromUrl(urlLink)
+		}
+
+		articleLinks = append(articleLinks, ArticleLink{
+			Title:    title,
+			Subtitle: subtitle,
+			Date:     date,
+			Url:      urlLink,
+		})
+	})
+
+	return articleLinks, nil
+}
+
+func RemoveAllNewlines(s string) string {
+	return UpdatedExtraSpaceRemove(strings.ReplaceAll(s, "\n", ""))
+}
+
+func UpdatedExtraSpaceRemove(s string) string {
+	split := strings.Split(s, "Updated")
+
+	for i, part := range split {
+		split[i] = strings.TrimSpace(part)
+	}
+
+	return strings.Join(split, "Updated ")
 }

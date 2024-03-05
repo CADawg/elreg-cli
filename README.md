@@ -23,6 +23,8 @@ elreg-cli
 Upon launching, you will see the homepage of The Register, displaying a list of headlines. You can navigate through the headlines using the following commands:
 
 - `<number>`: Type the number corresponding to the headline you want to read.
+- `a`: Show all headlines at once.
+- `s`: Show the next 5 headlines.
 - `q`: Quit the application.
 
 When reading an article, you can use the following commands:
@@ -30,6 +32,7 @@ When reading an article, you can use the following commands:
 - `Enter`: Advance to the next paragraph/line of the article.
 - `a`: Display the entire article at once.
 - `q`: Go back to the main menu.
+- `r`: Mark the article as read and go back to the main menu.
 
 ## Features
 

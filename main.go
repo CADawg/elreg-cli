@@ -1,30 +1,145 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/PuerkitoBio/goquery"
+	"github.com/dgraph-io/badger/v4"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 )
 
 var baseUrl = "https://www.theregister.com"
 
+var dataDir string
+var databaseDir string
+var db *badger.DB
+
 func main() {
 	//var currentArticle *Article = nil
-
-	links, err := FetchTheRegisterHomepageArticleLinks()
+	allLinks, err := FetchTheRegisterHomepageArticleLinks()
 
 	if err != nil {
-		fmt.Println("Error fetching article links: ", err)
+		panic(err)
 	}
+
+	appDataDir, err := os.UserConfigDir()
+
+	dataDir = filepath.Join(appDataDir, "elreg-cli")
+
+	err = os.Mkdir(dataDir, 0755)
+
+	if err != nil {
+		if !os.IsExist(err) {
+			panic(err)
+		}
+	}
+
+	// make a database folder
+	databaseDir = filepath.Join(dataDir, "v1_database")
+
+	err = os.Mkdir(databaseDir, 0755)
+
+	if err != nil {
+		if !os.IsExist(err) {
+			panic(err)
+		}
+	}
+
+	opts := badger.DefaultOptions(databaseDir)
+
+	// hide logging output as this is a cli app so that'll clog up the terminal
+	opts.Logger = nil
+
+	go func() {
+		// run the rubbish collection every 5 minutes
+		for {
+			time.Sleep(5 * time.Minute)
+			_ = db.RunValueLogGC(0.5)
+		}
+	}()
+
+	// initialize badger db in this folder
+	db, err = badger.Open(opts)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// save the viewed articles to a file
+
+	if err != nil {
+		panic(err)
+	}
+
+	// print first 5 links then wait for user input (one line per link)
+	links := allLinks[:5]
+	var linksShown int = 0
 
 	for _, link := range links {
-		fmt.Println("Title: ", link.Title)
-		fmt.Println("Subtitle: ", link.Subtitle)
-		fmt.Println("Date: ", link.Date)
-		fmt.Println("Url: ", link.Url)
-		fmt.Println("=====================================")
+		fmt.Printf("%d) %s - %s (%s)\n", linksShown, link.Title, link.Subtitle, link.Date)
+		linksShown++
 	}
 
-	article, err := ParseArticle("/2024/03/01/in_the_vanguard_of_21st/")
+	var looping bool = true
+	var currentArticle *Article = nil
+
+	for looping {
+		// show a prompt for user input
+		var input string
+		_, _ = fmt.Scanln(&input)
+
+		if currentArticle != nil {
+
+		} else {
+			// standard homepage loop
+			if input == "" {
+				fmt.Printf("\033[F%d) %s %s - %s\n", linksShown, allLinks[linksShown].Date, allLinks[linksShown].Title, allLinks[linksShown].Subtitle)
+				linksShown++
+			} else if input == "a" {
+				for i, link := range allLinks[linksShown:] {
+					if i == 0 {
+						fmt.Printf("\u001B[F%d) %s - %s (%s)\n", linksShown, link.Title, link.Subtitle, link.Date)
+					} else {
+						fmt.Printf("%d) %s - %s (%s)\n", linksShown, link.Title, link.Subtitle, link.Date)
+					}
+					linksShown++
+				}
+			} else if input == "s" {
+				// show next 5 links
+				for i, link := range allLinks[linksShown : linksShown+5] {
+					if i == 0 {
+						fmt.Printf("\u001B[F%d) %s - %s (%s)\n", linksShown, link.Title, link.Subtitle, link.Date)
+					} else {
+						fmt.Printf("%d) %s - %s (%s)\n", linksShown, link.Title, link.Subtitle, link.Date)
+					}
+					linksShown++
+				}
+			} else if input == "q" {
+				looping = false
+			} else {
+				parsedInt, err := strconv.Atoi(input)
+
+				if err != nil {
+					fmt.Println("Invalid input")
+				}
+
+				if parsedInt < 0 || parsedInt >= len(allLinks) {
+					fmt.Println("Unknown article")
+				}
+			}
+		}
+	}
+
+	// close the db
+	err = db.Close()
+
+	if err != nil {
+		panic(err)
+	}
+
+	/*article, err := ParseArticle("/2024/03/01/in_the_vanguard_of_21st/")
 
 	if err != nil {
 		fmt.Println("Error fetching article: ", err)
@@ -37,65 +152,42 @@ func main() {
 	fmt.Println("Content: ", article.ContentText)
 	fmt.Println("Author: ", article.Author)
 	fmt.Println("Author URL: ", article.AuthorUrl)
-	fmt.Println("=====================================")
+	fmt.Println("=====================================")*/
 }
 
-func FetchTheRegisterHomepageArticleLinks() ([]ArticleLink, error) {
-	// fetch the register homepage
-	resp, err := GetWithoutBotDetection(baseUrl, "")
+type LocalPostInfo struct {
+	Url    string
+	IsRead bool
+}
 
-	if err != nil {
-		return nil, err
-	}
+func GetReadStatusBadger(homepageUrl string) bool {
+	var localPostInfo LocalPostInfo
 
-	defer resp.Body.Close()
+	_ = db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte("v1_" + homepageUrl))
 
-	// parse the HTML to find the article links
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// find the article links
-	var articleLinks []ArticleLink
-
-	doc.Find("a.story_link").Each(func(i int, s *goquery.Selection) {
-		// For each item found, get the title, subtitle, timestamp and URL
-		title := s.Find("h4").Text()
-		subtitle := s.Find("div.standfirst").Text()
-		urlLink, _ := s.Attr("href")
-
-		// get 2 parents above to check it's not sponsored
-		parent := s.ParentsFiltered("article").ParentsFiltered("div")
-
-		// it's sponsored, skip
-		if parent.HasClass("other_stories") {
-			return
+		if err != nil {
+			return err
 		}
 
-		// also check the .section_name's text isn't "Webinar" as that's sponsored too
-		sectionName := s.ParentsFiltered("article").Find(".section_name").Text()
-
-		// it's sponsored, skip
-		if sectionName == "Webinar" {
-			return
-		}
-
-		date := s.Find(".time_stamp").Text()
-
-		if len(date) == 0 {
-			// fetch from url
-			date, _ = DateFromUrl(urlLink)
-		}
-
-		articleLinks = append(articleLinks, ArticleLink{
-			Title:    title,
-			Subtitle: subtitle,
-			Date:     date,
-			Url:      urlLink,
+		return item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &localPostInfo)
 		})
 	})
 
-	return articleLinks, nil
+	return localPostInfo.IsRead
+}
+
+func SetReadStatusBadger(homepageUrl string, readStatus bool) {
+	localPostInfo := LocalPostInfo{Url: homepageUrl, IsRead: readStatus}
+
+	_ = db.Update(func(txn *badger.Txn) error {
+		encoded, err := json.Marshal(localPostInfo)
+
+		if err != nil {
+			return err
+		}
+
+		return txn.Set([]byte("v1_"+homepageUrl), encoded)
+	})
 }
