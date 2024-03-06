@@ -1,4 +1,4 @@
-module elreg-cli
+module github.com/CADawg/elreg-cli
 
 go 1.22.0
 
