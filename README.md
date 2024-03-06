@@ -33,6 +33,8 @@ When reading an article, you can use the following commands:
 - `a`: Display the entire article at once.
 - `q`: Go back to the main menu.
 - `r`: Mark the article as read and go back to the main menu.
+- `q`: Go back to the main menu without marking the article as read.
+- `u`: Mark the article as unread and go back to the main menu.
 
 ## Features
 

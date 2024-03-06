@@ -9,14 +9,8 @@ import (
 	"strings"
 )
 
-func GetWithoutBotDetection(bUrl string, urlPath string) (*http.Response, error) {
-	fullUrl, err := url.JoinPath(bUrl, urlPath)
-
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", fullUrl, nil)
+func GetWithoutBotDetection(urlPath string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", urlPath, nil)
 
 	if err != nil {
 		return nil, err
@@ -34,7 +28,7 @@ func GetWithoutBotDetection(bUrl string, urlPath string) (*http.Response, error)
 }
 
 func ParseArticle(articleUrl string) (*Article, error) {
-	resp, err := GetWithoutBotDetection(baseUrl, articleUrl)
+	resp, err := GetWithoutBotDetection(articleUrl)
 
 	if err != nil {
 		return nil, err
@@ -95,7 +89,7 @@ func TrimSpaceExtra(untidyString string) string {
 
 func FetchTheRegisterHomepageArticleLinks() ([]ArticleLink, error) {
 	// fetch the register homepage
-	resp, err := GetWithoutBotDetection(baseUrl, "")
+	resp, err := GetWithoutBotDetection(baseUrl)
 
 	if err != nil {
 		return nil, err
@@ -120,6 +114,13 @@ func FetchTheRegisterHomepageArticleLinks() ([]ArticleLink, error) {
 		title := s.Find("h4").Text()
 		subtitle := RemoveAllNewlines(s.Find("div.standfirst").Text())
 		urlLink, _ := s.Attr("href")
+
+		urlLink, err := url.JoinPath(baseUrl, urlLink)
+
+		if err != nil {
+			// we want consistency for db saving read status so forget it.
+			return
+		}
 
 		// get 2 parents above to check it's not sponsored
 		parent := s.ParentsFiltered("article").ParentsFiltered("div")
@@ -155,8 +156,11 @@ func FetchTheRegisterHomepageArticleLinks() ([]ArticleLink, error) {
 	return articleLinks, nil
 }
 
+// RemoveAllNewlines removes all newlines from a string
+// as well as applying some other fixes to make text more uniform
+// there's probably a better way to do this
 func RemoveAllNewlines(s string) string {
-	return UpdatedExtraSpaceRemove(strings.ReplaceAll(s, "\n", ""))
+	return FeatureExtraSpaceRemove(UpdatedExtraSpaceRemove(strings.ReplaceAll(s, "\n", "")))
 }
 
 func UpdatedExtraSpaceRemove(s string) string {
@@ -167,4 +171,14 @@ func UpdatedExtraSpaceRemove(s string) string {
 	}
 
 	return strings.Join(split, "Updated ")
+}
+
+func FeatureExtraSpaceRemove(s string) string {
+	split := strings.Split(s, "Feature")
+
+	for i, part := range split {
+		split[i] = strings.TrimSpace(part)
+	}
+
+	return strings.Join(split, "Feature ")
 }
