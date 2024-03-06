@@ -18,3 +18,8 @@ type Article struct {
 	HasComments bool
 	CommentsUrl string
 }
+
+type LocalPostInfo struct {
+	Url    string
+	IsRead bool
+}

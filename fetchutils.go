@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -115,6 +117,9 @@ func FetchTheRegisterHomepageArticleLinks() ([]ArticleLink, error) {
 		subtitle := RemoveAllNewlines(s.Find("div.standfirst").Text())
 		urlLink, _ := s.Attr("href")
 
+		// remove any query string as url.join path escapes it, and it breaks the url
+		urlLink = strings.Split(urlLink, "?")[0]
+
 		urlLink, err := url.JoinPath(baseUrl, urlLink)
 
 		if err != nil {
@@ -181,4 +186,25 @@ func FeatureExtraSpaceRemove(s string) string {
 	}
 
 	return strings.Join(split, "Feature ")
+}
+
+func TryFetchArticleFromArticleLink(input string, allLinks []ArticleLink) (*Article, error) {
+	parsedInt, err := strconv.Atoi(input)
+
+	if err != nil {
+		return nil, errors.New("invalid input. Type `?` for help")
+	}
+
+	if parsedInt < 0 || parsedInt >= len(allLinks) {
+		return nil, errors.New("invalid input. Type `?` for help")
+	}
+
+	// get the article
+	currentArticle, err := ParseArticle(allLinks[parsedInt].Url)
+
+	if err != nil {
+		return nil, errors.New("error fetching article")
+	}
+
+	return currentArticle, err
 }
